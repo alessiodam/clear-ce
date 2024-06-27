@@ -37,10 +37,10 @@ jobs:
           echo $GITHUB_PATH
 
       - name: Make GFX
-        run: make gfx
+        run: make gfx -j
 
       - name: Build Clear Browser Client
-        run: make
+        run: make -j
 
       - name: delete .bin files from bin dir
         run: rm bin/*.bin
