@@ -31,7 +31,7 @@
 
 #include "http-client/http-client.h"
 
-#include "renderer.h"
+#include "webengine/webengine.h"
 
 enum
 {
@@ -43,10 +43,12 @@ char *chars_lower = "\0\0\0\0\0\0\0\0\0\0\"wrmh\0\0?[vqlg\0\0.zupkfc\0 ytojeb\0\
 char *chars_upper = "\0\0\0\0\0\0\0\0\0\0\"WRMH\0\0?[VQLG\0\0:ZUPKFC\0 YTOJEB\0\0XSNIDA\0\0\0\0\0\0\0\0";
 char *chars_num = "\0\0\0\0\0\0\0\0\0\0+-*/^\0\0?359)\0\0\0.258(\0\0\0000147,\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
 char mode_indic[] = {'a', 'A', '1'};
+bool outchar_scroll_up = true;
 
 struct netif *ethif = NULL;
 
 bool run_main = false;
+bool wait_for_http = false;
 
 const char *TEST_HTML = "<p>Merthsoft Creations</p>"
 "       <p>Links:</p>"
@@ -119,9 +121,43 @@ void display_mode_indicators()
     gfx_SetTextFGColor(0);
 }
 
+static void newline(void)
+{
+    if (outchar_scroll_up)
+    {
+        memmove(gfx_vram, gfx_vram + (LCD_WIDTH * 10), LCD_WIDTH * (LCD_HEIGHT - 30));
+        gfx_SetColor(255);
+        gfx_FillRectangle_NoClip(0, LCD_HEIGHT - 30, LCD_WIDTH, 10);
+        gfx_SetTextXY(2, LCD_HEIGHT - 30);
+    }
+    else
+        gfx_SetTextXY(2, gfx_GetTextY() + 10);
+}
+
+void outchar(char c)
+{
+    if (c == '\n')
+    {
+        newline();
+    }
+    else if (c < ' ' || c > '~')
+    {
+        return;
+    }
+    else
+    {
+        if (gfx_GetTextX() >= LCD_WIDTH - 16)
+        {
+            newline();
+        }
+        gfx_PrintChar(c);
+    }
+}
+
 static void http_get_recv(struct pbuf *p, err_t err) {
     dbg_printf("HTTP rcv:\n%.*s", p->len, (char *)p->payload);
     render_html((char *)p->payload);
+    wait_for_http = false;
 }
 
 int main(void)
@@ -135,8 +171,7 @@ int main(void)
     if (usb_Init(eth_handle_usb_event, NULL, NULL, USB_DEFAULT_INIT_FLAGS))
         goto exit;
 
-    dbg_printf("Waiting for interface...\n");
-    printf(".");
+    printf("Waiting for interface...\n");
     while (ethif == NULL)
     {
         key = os_GetCSC();
@@ -146,22 +181,17 @@ int main(void)
         ethif = netif_find("en0");
         handle_all_events();
     }
-    dbg_printf("interface found\n");
-    printf(".");
-
-    dbg_printf("DHCP starting...\n");
-    printf(".");
+    printf("interface found\n");
+    printf("DHCP starting...\n");
     netif_set_status_callback(ethif, ethif_status_callback_fn);
     if (dhcp_start(ethif) != ERR_OK)
     {
-        dbg_printf("dhcp_start failed\n");
+        printf("dhcp_start failed\n");
         goto exit;
     }
-    dbg_printf("dhcp started\n");
-    printf(".");
+    printf("dhcp started\n");
 
-    dbg_printf("waiting for DHCP to complete...\n");
-    printf(".");
+    printf("waiting for DHCP to complete...\n");
     while (!dhcp_supplied_address(ethif))
     {
         key = os_GetCSC();
@@ -170,43 +200,32 @@ int main(void)
         }
         handle_all_events();
     }
-    dbg_printf("DHCP completed\n");
-    printf(".");
-
-    // events_msleep(1000);
-
-    // dbg_printf("Testing HTTP GET...\n");
-    // if (http_request(HTTP_GET, ethif, "152.228.162.35", 80, "/", "", "", 1024, http_get_recv) != ERR_OK)
-    // {
-    //     dbg_printf("HTTP GET failed\n");
-    //     msleep(1000);
-    //     goto exit;
-    // }
-    // 
-    // dbg_printf("Waiting for HTTP response...\n");
-    // while (1)
-    // {
-    //     key = os_GetCSC();
-    //     if (key == sk_Clear) {
-    //         break;
-    //     }
-    //     handle_all_events();
-    // }
-
-    printf(".\n");
-    printf("Init done\n");
+    printf("DHCP completed\n");
 
     while (1)
     {
         key = os_GetCSC();
         if (key == sk_Clear)
         {
-            break;
+            goto exit;
         }
         else if (key == sk_Enter)
         {
-            os_ClrLCD();
-            render_html(TEST_HTML);
+            dbg_printf("HTTP GET\n");
+            if (http_request(HTTP_GET, "merthsoft.com", 80, "/", "", "", 4096, http_get_recv) != ERR_OK)
+            {
+                dbg_printf("HTTP GET failed\n");
+                goto exit;
+            }
+            dbg_printf("wait HTTP\n");
+            while (wait_for_http)
+            {
+                key = os_GetCSC();
+                if (key == sk_Clear) {
+                    goto exit;
+                }
+                handle_all_events();
+            }
         }
         handle_all_events();
     }
