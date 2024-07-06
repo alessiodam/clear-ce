@@ -50,45 +50,15 @@ struct netif *ethif = NULL;
 bool run_main = false;
 bool wait_for_http = false;
 
-const char *TEST_HTML = "<p>Merthsoft Creations</p>"
-"       <p>Links:</p>"
-"       <ul>"
-"           <li>TokenIDE:"
-"               <ul>"
-"                   <li><a href=\"Tokens.zip\">Tokens.zip</a></li>"
-"                   <li><a href=\"Tokens.tar.xz\">Tokens.tar.xz</a></li>"
-"                   <li><a href=\"http://www.cemetech.net/forum/viewtopic.php?t=4798\">Topic on Cemetech</a></li>"
-"                   <li><a href=\"https://bitbucket.org/merthsoft/tokenide\">BitBucket page</a></li>"
-"               </ul>"
-"           </li>"
-"           <li>DecBot:"
-"               <ul>"
-"                   <li><a href=\"DecBot.php\">Scores</a></li>"
-"                   <li><a href=\"DecBotTab.php\">TSV</a></li>"
-"                   <li><a href=\"http://www.cemetech.net/forum/viewtopic.php?t=5543\">Topic on Cemetech</a></li>"
-"                   <li><a href=\"https://bitbucket.org/merthsoft/decbot\">BitBucket page</a></li>"
-"               </ul>"
-"           </li>"
-"           <li><a href=\"vardump.php\">Variable dumper</a></li>"
-"           <li><a href=\"binsprite.html\">Binary/hex sprite renderer</a></li>"
-"           <li><a href=\"gol\">HTML5 Game of Life</a></li>"
-"           <li><a href=\"https://github.com/merthsoft\">GitHub page</a></li>"
-"           <li><a href=\"linkguide\">TI Link Protocol Guide</a></li>"
-"           <li><a href=\"http://www.cemetech.net/forum/viewforum.php?f=69\">Projects on Cemetech</a>"
-"               <a href=\"http://www.cemetech.net/forum/profile.php?mode=viewprofile&amp;u=merthsoft\"> (profile)</a></li>"
-"           <li><a href=\"http://www.ticalc.org/archives/files/authors/75/7522.html\">ticalc.org profile</a></li>"
-"           <li><a href=\"http://thisaintopera.com\">This Ain't Opera</a></li>"
-"       </ul>";
-
 void ethif_status_callback_fn(struct netif *netif)
 {
     if (netif->flags & NETIF_FLAG_LINK_UP)
     {
-        dbg_printf("Link up\n");
+        printf("Link up\n");
     }
     else
     {
-        dbg_printf("Link down\n");
+        printf("Link down\n");
     }
 }
 
@@ -154,8 +124,8 @@ void outchar(char c)
     }
 }
 
-static void http_get_recv(struct pbuf *p, err_t err) {
-    dbg_printf("HTTP rcv:\n%.*s", p->len, (char *)p->payload);
+static void http_content_received(struct pbuf *p, err_t err) {
+    printf("HTTP rcv:\n%.*s", p->len, (char *)p->payload);
     render_html((char *)p->payload);
     wait_for_http = false;
 }
@@ -211,13 +181,14 @@ int main(void)
         }
         else if (key == sk_Enter)
         {
-            dbg_printf("HTTP GET\n");
-            if (http_request(HTTP_GET, "merthsoft.com", 80, "/", "", "", 4096, http_get_recv) != ERR_OK)
+            printf("HTTP GET\n");
+            err_t http_get_err = http_request(HTTP_GET, "merthsoft.com", 80, "/", "", "", 4096, http_content_received);
+            if (http_get_err != ERR_OK)
             {
-                dbg_printf("HTTP GET failed\n");
+                printf("HTTP GET failed, code: %d\n", http_get_err);
                 goto exit;
             }
-            dbg_printf("wait HTTP\n");
+            printf("wait HTTP\n");
             while (wait_for_http)
             {
                 key = os_GetCSC();
@@ -231,6 +202,7 @@ int main(void)
     }
     goto exit;
 exit:
+    msleep(2000);
     exit_funcs();
     exit(0);
 }
