@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdarg.h>
 
 #include <usbdrvce.h>
 #include <ti/getcsc.h>
@@ -26,6 +27,7 @@
 // #include "lwip/altcp_tcp.h"
 // #include "lwip/altcp.h"
 #include "lwip/dhcp.h"
+#include "lwip/dns.h"
 
 #include "drivers/usb-ethernet.h"
 
@@ -50,47 +52,7 @@ struct netif *ethif = NULL;
 bool run_main = false;
 bool wait_for_http = false;
 
-void ethif_status_callback_fn(struct netif *netif)
-{
-    if (netif->flags & NETIF_FLAG_LINK_UP)
-    {
-        printf("Link up\n");
-    }
-    else
-    {
-        printf("Link down\n");
-    }
-}
-
-void exit_funcs(void)
-{
-    usb_Cleanup();
-    gfx_End();
-}
-
-void handle_all_events()
-{
-    usb_HandleEvents();       // usb events
-    sys_check_timeouts();     // lwIP timers/event callbacks
-}
-
-void events_msleep(uint16_t msec)
-{
-    uint32_t start_time = sys_now();
-    while ((sys_now() - start_time) < msec)
-    {
-        handle_all_events();
-        usleep(1000);
-    }
-}
-
-void display_mode_indicators()
-{
-    gfx_SetTextFGColor(11);
-    gfx_PrintChar(mode_indic[INPUT_LOWER]);
-    gfx_SetTextFGColor(0);
-}
-
+/* customize printf and input functions */
 static void newline(void)
 {
     if (outchar_scroll_up)
@@ -123,7 +85,87 @@ void outchar(char c)
     }
 }
 
-static void http_content_received(struct pbuf *p, err_t err) {
+void display_mode_indicators()
+{
+    gfx_SetTextFGColor(11);
+    gfx_PrintChar(mode_indic[INPUT_LOWER]);
+    gfx_SetTextFGColor(0);
+}
+
+void exit_funcs(void)
+{
+    usb_Cleanup();
+    gfx_End();
+}
+
+void handle_all_events()
+{
+    usb_HandleEvents();       // usb events
+    sys_check_timeouts();     // lwIP timers/event callbacks
+}
+
+void events_msleep(uint16_t msec)
+{
+    uint32_t start_time = clock() * 1000 / CLOCKS_PER_SEC;
+    while (1)
+    {
+        if ((clock() * 1000 / CLOCKS_PER_SEC) - start_time > msec)
+        {
+            break;
+        }
+        handle_all_events();
+    }
+}
+
+/* logging stuff */
+typedef enum {
+    LOGLEVEL_DEBUG = 0,
+    LOGLEVEL_INFO = 1,
+    LOGLEVEL_WARN = 2,
+    LOGLEVEL_ERROR = 3
+} log_level_t;
+
+#define MIN_LOGLEVEL LOGLEVEL_INFO
+
+void printf_log(log_level_t level, const char *file, int line, const char *format, ...)
+{
+    if (level >= MIN_LOGLEVEL)
+    {
+        va_list args;
+        va_start(args, format);
+        printf("%s:%04d: ", file, line);
+        vprintf(format, args);
+        printf("\n");
+        va_end(args);
+    }
+}
+
+void ethif_status_callback_fn(struct netif *netif)
+{
+    if (netif->flags & NETIF_FLAG_LINK_UP)
+    {
+        printf("Link up");
+    }
+    else
+    {
+        printf("Link down");
+    }
+}
+
+void set_static_dns_server_to_cloudflare()
+{
+    printf("Set Static DNS Server 1.1.1.1 Start.\n");
+    ip_addr_t dnsserver;
+    ipaddr_aton("1.1.1.1", &dnsserver);
+    dns_setserver(0, &dnsserver);
+    printf("Set DNS Server %s Done.\n", ipaddr_ntoa(dns_getserver(0)));
+}
+
+void http_content_received(struct pbuf *p, err_t err) {
+    if (err != ERR_OK) {
+        printf("HTTP err: %d", err);
+        return;
+    }
     printf("HTTP rcv:\n%.*s", p->len, (char *)p->payload);
     render_html((char *)p->payload);
     wait_for_http = false;
@@ -140,7 +182,7 @@ int main(void)
     if (usb_Init(eth_handle_usb_event, NULL, NULL, USB_DEFAULT_INIT_FLAGS))
         goto exit;
 
-    printf("Waiting for interface...\n");
+    printf("Interface Wait.\n");
     while (ethif == NULL)
     {
         key = os_GetCSC();
@@ -150,38 +192,49 @@ int main(void)
         ethif = netif_find("en0");
         handle_all_events();
     }
-    printf("interface found\n");
-    printf("DHCP starting...\n");
+    printf("interface Found.\n");
+
+    printf("DHCP Start.\n");
     netif_set_status_callback(ethif, ethif_status_callback_fn);
     if (dhcp_start(ethif) != ERR_OK)
     {
-        printf("dhcp_start failed\n");
+        printf("DHCP Start Fail.\n");
         goto exit;
     }
-    printf("dhcp started\n");
+    printf("DHCP Done.\n");
 
-    printf("waiting for DHCP to complete...\n");
+    printf("DHCP Wait.\n");
     while (!dhcp_supplied_address(ethif))
     {
         key = os_GetCSC();
-        if (key == sk_Clear) {
-            goto exit;
-        }
+        if (key == sk_Clear) { goto exit; }
         handle_all_events();
     }
-    printf("DHCP completed\n");
+    printf("DHCP Done.\n");
+
+    printf("DNS Init Start.\n");
+    dns_init();
+    printf("DNS Init Done.\n");
+
+    const ip_addr_t *dhcp_nameserver = dns_getserver(0);
+    if (dhcp_nameserver != NULL)
+    {
+        printf("DHCP DNS Server: %s\n", ipaddr_ntoa(dhcp_nameserver));
+    }
+    else
+    {
+        printf("DHCP Provided no DNS Server.\n");
+        set_static_dns_server_to_cloudflare();
+    }
 
     while (1)
     {
         key = os_GetCSC();
-        if (key == sk_Clear)
-        {
-            goto exit;
-        }
+        if (key == sk_Clear) { goto exit; }
         else if (key == sk_Enter)
         {
             printf("HTTP GET\n");
-            err_t http_get_err = http_request(HTTP_GET, "merthsoft.com", 80, "/", "", "", 4096, http_content_received);
+            err_t http_get_err = http_request(HTTP_GET, "152.228.162.35", 80, "/", "", "", 2048, http_content_received);
             if (http_get_err != ERR_OK)
             {
                 printf("HTTP GET failed, code: %d\n", http_get_err);
@@ -197,6 +250,7 @@ int main(void)
                 handle_all_events();
             }
         }
+        else if (key == sk_TglExact) { set_static_dns_server_to_cloudflare(); }
         handle_all_events();
     }
     goto exit;
