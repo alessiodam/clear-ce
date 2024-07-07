@@ -1,6 +1,7 @@
 [submodule "app_tools"]
 	path = app_tools
-	url = https://github.com/CE-Programming/app_tools.git
+	url = https://github.com/CE-Programming/app_tools
+
 [submodule "src/http-client"]
 	path = src/http-client
 	url = https://github.com/tkbstudios/lwIP-CE-HTTP-Client
