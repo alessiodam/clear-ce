@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Joan Lledó <jlledom@member.fsf.org>
+ * Copyright (C) 2023 Joan Lledï¿½ <jlledom@member.fsf.org>
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -120,7 +120,7 @@ const char *lwip_inet_ntop(int af, const void *src, char *dst, socklen_t size);
 int lwip_inet_pton(int af, const char *src, void *dst);
 #endif
 
-/* Unsuported indetifiers */
+/* Unsupported identifiers */
 #ifndef SO_NO_CHECK
 #define SO_NO_CHECK         0xFF
 #endif
